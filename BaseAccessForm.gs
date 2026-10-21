@@ -926,7 +926,7 @@ function rosterObj_(r) {
   return out;
 }
 function isAdult_(o) { return String(o['Must submit own ID (18+ at start)']) === 'Yes'; }
-function rosterName_(o) { return o ? [o.Rank, o['First name'], o['Last name']].join(' ') : ''; }
+function rosterName_(o) { return o ? [o.Rank, nameCase_(o['First name']), nameCase_(o['Last name'])].join(' ') : ''; }
 function last4_(v) { var d = String(v || '').replace(/[^A-Za-z0-9]/g, ''); return d ? '...' + d.slice(-4) : ''; }
 function ageOn_(dobIso) {
   if (!dobIso) return '';
@@ -1668,9 +1668,20 @@ function isYes_(v) { return String(v || '').indexOf('YES') === 0; }
 function drivesOf_(q) { return isYes_(q.drives); }
 // Names typed all lowercase or ALL CAPS become "Title Case". Names already in mixed case are kept exactly
 // as typed (e.g. "McGrath", "de la Torre"). Handles hyphens and apostrophes (O'Neil), Mc (McGrath) and suffixes (Jr, III).
+var NAME_PARTICLES = /^(van|von|der|den|de|del|della|degli|di|da|das|do|dos|du|la|le|ten|ter|y|e|bin|binti|bint|al|el|ibn)$/;
 function nameCase_(v) {
   var t = String(v || '');
-  if (!/[A-Za-z\u00C0-\u024F]/.test(t) || (t !== t.toLowerCase() && t !== t.toUpperCase())) return t;
+  if (!/[A-Za-z\u00C0-\u024F]/.test(t)) return t;
+  if (t !== t.toLowerCase() && t !== t.toUpperCase()) {
+    // Mixed case ("Suraj krishna", "Yeung salazar"): capitalize each word that starts lowercase, except particles
+    // like "van" or "de" ("Quinton Heath van Horn" stays). Other letters are left as typed (McDonald, DeLeon).
+    return t.split(/(\s+)/).map(function (w) {
+      if (!w || /^\s+$/.test(w)) return w;
+      if (NAME_PARTICLES.test(w)) return w;   // "van Horn" as a last name stays as entered
+      var c = w.charAt(0);
+      return c !== c.toLowerCase() || c === c.toUpperCase() ? w : c.toUpperCase() + w.slice(1);
+    }).join('');
+  }
   var parts = t.toLowerCase().split(/([\s\-'\u2019.]+)/), wordNo = 0;
   return parts.map(function (w) {
     if (!w || /^[\s\-'\u2019.]+$/.test(w)) return w;
@@ -1803,7 +1814,7 @@ function syncRosterFromRegZone() {
       var zip = v('Zip').replace(/\.0$/, ''); if (/^[0-9]{9}$/.test(zip)) zip = zip.slice(0, 5) + '-' + zip.slice(5);
       var street = [v('Addr1'), v('Addr2')].filter(String).join(', ');
       recs[cap] = {
-        'CAPID': cap, 'Rank': RANK_FIX[v('Rank')] || v('Rank'), 'Last name': v('NameLast'), 'First name': v('NameFirst'), 'Event': ev,
+        'CAPID': cap, 'Rank': RANK_FIX[v('Rank')] || v('Rank'), 'Last name': nameCase_(v('NameLast')), 'First name': nameCase_(v('NameFirst')), 'Event': ev,
         'Member type': v('MbrType').toUpperCase() === 'CADET' ? 'Cadet' : 'Senior', 'Birth month/year (Reg Zone)': v('DOB'),
         'Age at event start': isNaN(age) ? '' : age, 'Must submit own ID (18+ at start)': age >= 18 ? 'Yes' : 'No',
         'Email': v('Email'), 'Parent email': v('CadetParentEmailPrimary'),
@@ -2076,7 +2087,7 @@ function approvalData_() {
       var needUnit = v('UnitApproved') !== 'Yes';
       var needParent = minor && v('ParentApproved') !== 'Approved';
       if (!needUnit && !needParent) return;
-      out.push({ ev: ev, cap: cap, rank: RANK_FIX[v('Rank')] || v('Rank'), first: v('NameFirst'), last: v('NameLast'), status: st,
+      out.push({ ev: ev, cap: cap, rank: RANK_FIX[v('Rank')] || v('Rank'), first: nameCase_(v('NameFirst')), last: nameCase_(v('NameLast')), status: st,
         minor: minor, needUnit: needUnit, needParent: needParent, email: v('Email'), parent: v('CadetParentEmailPrimary'),
         ccName: v('UnitCCName'), ccEmail: v('UnitCCEmail'), unit: v('Unit').replace(/\.0$/, ''), wing: v('Wing') });
     });
