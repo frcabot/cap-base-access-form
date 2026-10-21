@@ -28,7 +28,7 @@ It was built for and used at a wing winter encampment with about 475 registrants
 Each submission is checked against the installation's usual rules, for example:
 - The ID expires before the event ends.
 - No expiration date was given.
-- A license without a star is missing its Social Security number or second ID.
+- A license without a star is missing its Social Security number or second ID, or the "second ID" is not one they have now (for example "will get a REAL ID") or has no number.
 - "ID issued by" does not fit the ID type: a license must be issued by a state, a U.S. passport by the United States, a foreign passport by a foreign country.
 - The ID number is actually the CAPID.
 - A non-citizen gave no immigration document.
@@ -43,6 +43,7 @@ Each submission is checked against the installation's usual rules, for example:
   - **"Received – STATUS: COMPLETE"**, or
   - **"ACTION NEEDED – STATUS: NOT COMPLETE"**, with numbered items. Each item says what they entered, what is wrong, and a **FIX:** line with exactly what to change, plus their personal edit link.
 - **A second form for the same attendee** adds guests to the earlier list. It never replaces it. Corrections to the same guest replace the earlier entry.
+- **Easy to read on any phone or computer.** Every email is sent formatted (paragraphs, numbered fix items, bold labels, clickable links, COMPLETE in green and NOT COMPLETE in red), with a plain-text copy for mail apps that do not show formatting.
 
 **Automatic follow-ups**
 - **Twice a week** (Mondays and Thursdays), staff and slotted students get a reminder if they:
@@ -57,6 +58,8 @@ Each submission is checked against the installation's usual rules, for example:
 - **Roster tab:** who has submitted, whose own ID is on file, guest counts, and problems.
 - **Submissions tab:** one row per attendee, newest first, with plain-language flags.
 - **SECFOR Roster (masked):** everyone who will come through the gate, with only the **last 4 digits** of each SSN and ID number.
+  - **Each person appears once**, even when siblings each list the same parents as guests (same name and date of birth = same person; both sponsors are shown).
+  - **"ID issued by" is standardized** for security: a 2-letter state for licenses and state IDs ("California DMV" -> CA), "United States" for U.S. federal IDs, and a standard country name for foreign passports. Citizenship is standardized the same way in the full export. Anything not recognized is left exactly as typed. The checks and fix emails still use what people actually typed.
 - **Full SECFOR export:** a separate, private spreadsheet with the full information, for sending to installation security.
 - **Email log:** every email sent, with recipients and status.
 - **Help Requests:** people can pick "I need help" on the form. They get an automatic answer to the common problems, and the request is emailed to the administrator.
@@ -131,7 +134,8 @@ Each submission is checked against the installation's usual rules, for example:
 | Menu item | What it does |
 |---|---|
 | Rebuild tabs now | Refreshes every tab. It also runs automatically after each submission. |
-| Pull new people from Reg Zone exports | Adds new registrants and marks people who dropped out |
+| Pull new people from Reg Zone exports | Adds new registrants, updates ranks and names, and marks people who dropped out |
+| Check automation status | Shows which Google account runs the emails and scheduled jobs, which jobs are on for that account (daily pull, confirmation emails, follow-ups, email queue, weekly approval reminders), when the last Reg Zone pull finished, and the time zone used for "6 AM" |
 | Email personal links | The first email with each person's link (only to people not emailed yet) |
 | Send reminders | Reminds staff and slotted students who have not submitted |
 | Email fix requests | Re-sends the "ACTION NEEDED" email to forms that still have problems (each version once) |
@@ -169,6 +173,7 @@ This form collects **Social Security numbers, dates of birth and ID numbers**. T
 ## Limits and tips
 
 - **Daily email limit:** each Google account has one. When it is reached, emails wait on an "Email queue" tab and go out automatically within the next hours. `EMAIL_RESERVE` keeps room for confirmations.
+- **Scheduled jobs belong to one Google account.** Turn on the daily pull and other automatic jobs while signed in as the account shown by **Check automation status**. If a daily pull was set up from a different account, it turns itself off and emails you once instead of silently doing nothing.
 - **Change the form at quiet times.** Changing questions or answer choices while people are filling it out can make some of their answers disappear. "Apply wording changes" only changes text, but run it late at night or early in the morning anyway.
 - **People with two or more forms** for the same attendee are listed for you to check by hand instead of being emailed automatically. One edit link might be the wrong one.
 - **The checks catch common mistakes, not everything.** Installation security makes the final access decision.

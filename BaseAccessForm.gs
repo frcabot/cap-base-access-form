@@ -169,20 +169,84 @@ var US_STATES = ('AL Alabama|AK Alaska|AZ Arizona|AR Arkansas|CA California|CO C
   'VT Vermont|VA Virginia|WA Washington|WV West Virginia|WI Wisconsin|WY Wyoming|PR Puerto Rico|GU Guam|VI Virgin Islands|' +
   'AS American Samoa|MP Northern Mariana Islands').split('|');
 // "CA", "Calif.", "California DMV", "State of California", "CA Department of Motor Vehicles" -> true
-function isUSState_(v) {
+function isUSState_(v) { return !!usStateCode_(v); }
+// Same parsing, returning the 2-letter code ('' if no state): "California DMV" -> "CA", "Sacramento, CA" -> "CA"
+function usStateCode_(v) {
   var raw = String(v || '').replace(/[^A-Za-z]/g, '').toLowerCase();   // bare abbreviation first: "ID" (Idaho), "OR", "IN", "ME"
-  if (raw.length === 2 && US_STATES.some(function (x) { return x.slice(0, 2).toLowerCase() === raw; })) return true;
+  var hit = '';
+  if (raw.length === 2) US_STATES.some(function (x) { if (x.slice(0, 2).toLowerCase() === raw) { hit = x.slice(0, 2); return true; } });
+  if (hit) return hit;
   var t = String(v || '').replace(/\b(state|of|the|dmv|department|dept|motor|vehicles?|driver'?s?|licen[cs]es?|id|card|real|services?|division|bureau|office|agency)\b/gi, ' ')
     .replace(/[^A-Za-z ]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase()
     .replace(/\s+(usa|u s a|us|u s|united states( of america)?|america)$/, '');   // "California, USA" -> "california"
-  if (!t) return false;
-  if (/^(calif|cal|cali)$/.test(t)) return true;
-  return US_STATES.some(function (x) {
+  if (!t) return '';
+  if (/^(calif|cal|cali)$/.test(t)) return 'CA';
+  var best = 0;
+  US_STATES.forEach(function (x) {
     var ab = x.slice(0, 2).toLowerCase(), nm = x.slice(3).toLowerCase();
-    if (t === ab || t === nm) return true;
     var re = new RegExp('(^|\\s)(' + nm + '|' + ab + ')$');   // "Sacramento, CA", "City of Austin Texas"
-    return t.indexOf(' ') > 0 && re.test(t);
+    var score = (t === ab || t === nm) ? 1000 : (t.indexOf(' ') > 0 && re.test(t)) ? (re.exec(t)[2].length) : 0;
+    if (score > best) { best = score; hit = x.slice(0, 2); }   // longest match wins: "West Virginia" -> WV, not VA
   });
+  return hit;
+}
+
+// The lists for installation security show "ID issued by" and citizenship in one standard form:
+// a 2-letter state for licenses and state IDs, "United States" for U.S. federal IDs, and a standard country name otherwise.
+// Flags and fix emails still check what the person actually typed.
+var COUNTRY_ALIASES = {
+  'United States': ['us', 'usa', 'u s', 'u s a', 'united states', 'united states of america', 'america', 'american', 'us government', 'us department of state', 'department of state', 'state department', 'uscis', 'dhs', 'cbp', 'tsa', 'homeland security', 'us dept of state', 'dept of state'],
+  'Mexico': ['mexico', 'mx', 'mexican', 'estados unidos mexicanos', 'mexico sre', 'sre'],
+  'Canada': ['canada', 'canadian'],
+  'China': ['china', 'prc', 'peoples republic of china', 'people s republic of china', 'chinese', 'cn'],
+  'Taiwan': ['taiwan', 'roc', 'republic of china', 'taiwan roc', 'taiwanese'],
+  'South Korea': ['south korea', 'korea', 'republic of korea', 'rok', 'korea south', 'korean', 'korea republic of', 'kr'],
+  'India': ['india', 'indian', 'republic of india', 'in'],
+  'Philippines': ['philippines', 'the philippines', 'republic of the philippines', 'filipino', 'ph'],
+  'Vietnam': ['vietnam', 'viet nam', 'vietnamese', 'socialist republic of vietnam', 'vn'],
+  'Japan': ['japan', 'japanese', 'jp'],
+  'United Kingdom': ['united kingdom', 'uk', 'u k', 'great britain', 'britain', 'england', 'scotland', 'wales', 'british', 'gb'],
+  'Germany': ['germany', 'deutschland', 'german'], 'France': ['france', 'french'], 'Italy': ['italy', 'italian'], 'Spain': ['spain', 'espana', 'spanish'],
+  'Ireland': ['ireland', 'irish', 'republic of ireland'], 'Netherlands': ['netherlands', 'holland', 'the netherlands', 'dutch'],
+  'Russia': ['russia', 'russian federation', 'russian'], 'Ukraine': ['ukraine', 'ukrainian'], 'Poland': ['poland', 'polish'],
+  'Israel': ['israel', 'israeli'], 'Iran': ['iran', 'islamic republic of iran', 'iranian'], 'Turkey': ['turkey', 'turkiye', 'turkish'],
+  'Pakistan': ['pakistan', 'pakistani'], 'Bangladesh': ['bangladesh'], 'Sri Lanka': ['sri lanka', 'srilanka'], 'Nepal': ['nepal'],
+  'Afghanistan': ['afghanistan'], 'Iraq': ['iraq'], 'Saudi Arabia': ['saudi arabia', 'ksa'], 'United Arab Emirates': ['united arab emirates', 'uae'],
+  'Egypt': ['egypt'], 'Nigeria': ['nigeria', 'nigerian'], 'Ethiopia': ['ethiopia'], 'Kenya': ['kenya'], 'Ghana': ['ghana'], 'South Africa': ['south africa'],
+  'Australia': ['australia', 'australian'], 'New Zealand': ['new zealand', 'nz'], 'Singapore': ['singapore'], 'Malaysia': ['malaysia'],
+  'Indonesia': ['indonesia'], 'Thailand': ['thailand', 'thai'], 'Cambodia': ['cambodia'], 'Laos': ['laos', 'lao pdr'], 'Myanmar': ['myanmar', 'burma'],
+  'Hong Kong': ['hong kong', 'hong kong sar', 'hksar'], 'Mongolia': ['mongolia'], 'Armenia': ['armenia'],
+  'El Salvador': ['el salvador', 'salvador'], 'Guatemala': ['guatemala'], 'Honduras': ['honduras'], 'Nicaragua': ['nicaragua'], 'Costa Rica': ['costa rica'],
+  'Panama': ['panama'], 'Colombia': ['colombia', 'columbia'], 'Peru': ['peru'], 'Venezuela': ['venezuela'], 'Ecuador': ['ecuador'], 'Brazil': ['brazil', 'brasil'],
+  'Argentina': ['argentina'], 'Chile': ['chile'], 'Cuba': ['cuba'], 'Dominican Republic': ['dominican republic'], 'Jamaica': ['jamaica'], 'Haiti': ['haiti']
+};
+var COUNTRY_LOOKUP_ = null;
+function countryStd_(v) {
+  var t = String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/\b(passport|passports|government|gov'?t|of the|ministry of foreign affairs|foreign affairs|citizen(ship)?|national|issued|by)\b/g, ' ')
+    .replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!t) return String(v || '').trim();
+  if (!COUNTRY_LOOKUP_) {
+    COUNTRY_LOOKUP_ = {};
+    Object.keys(COUNTRY_ALIASES).forEach(function (k) { COUNTRY_ALIASES[k].forEach(function (a) { COUNTRY_LOOKUP_[a] = k; }); });
+  }
+  if (COUNTRY_LOOKUP_[t]) return COUNTRY_LOOKUP_[t];
+  if (COUNTRY_LOOKUP_[t.replace(/^the /, '')]) return COUNTRY_LOOKUP_[t.replace(/^the /, '')];
+  return String(v || '').trim();   // unknown: leave exactly as typed
+}
+function issuerStd_(v, idType) {
+  var raw = String(v || '').trim();
+  if (!raw || isExemptId_(idType)) return raw;
+  if (STATE_ID_TYPES.indexOf(idType) >= 0) return usStateCode_(raw) || raw;
+  if (US_FED_TYPES.indexOf(idType) >= 0 || idType === 'Federal PIV or PIV-I card') return countryStd_(raw) === 'United States' ? 'United States' : raw;
+  if (idType === 'Foreign passport') return /^georgia$/i.test(raw) ? 'Georgia (country)' : countryStd_(raw);
+  if (idType === 'Tribal photo ID') return raw;
+  return usStateCode_(raw) || (countryStd_(raw) !== raw ? countryStd_(raw) : raw);
+}
+function citizenStd_(v) {
+  var raw = String(v || '').trim();
+  if (!raw) return raw;
+  return isUSCitizenText_(raw) ? 'United States' : countryStd_(raw);
 }
 // "United States", "USA", "U.S.", "American", "US citizen", "United States of America" -> true
 function isUSCitizenText_(v) {
@@ -552,6 +616,7 @@ function onOpen() {
     .addItem('Rebuild tabs now', 'rebuildNow')
     .addItem('Pull new people from Reg Zone exports', 'syncRosterFromRegZone')
     .addItem('Turn on daily Reg Zone pull (6 AM)', 'turnOnDailySync')
+    .addItem('Check automation status', 'showAutomationStatus')
     .addSeparator()
     .addItem('Run emails and automation from MY Google account', 'takeOverAutomation')
     .addItem('Email personal links (people not emailed yet)', 'emailPersonalLinks')
@@ -1152,6 +1217,11 @@ function receiptIssues_(p, ro) {
       else if (f === 'non-REAL ID without a second ID') out.push(who + ': the ID type picked is a license or ID WITHOUT a star ("Federal Limits ' +
         'Apply"). With that kind of ID, a SECOND ID is also required. FIX: fill in the second ID questions. (If the license actually HAS a ' +
         'star, change the ID type to "' + DL_REAL + '" instead.)');
+      else if (f.indexOf('second ID not usable') === 0) out.push(who + ': the second ID entered ("' + String(x.doc2Type || '') + '") ' +
+        (/\d/.test(String(x.doc2Number || '')) ? 'is not an ID this person has right now.' : 'has no ID number.') +
+        ' The second ID must be an ID this person ALREADY HAS, for example a U.S. passport or passport card, a green card, or a birth ' +
+        'certificate, with the number printed on it. FIX: enter that second ID and its number. (If this person gets a license WITH a star ' +
+        'before the form is due, you can instead change the ID type to "' + DL_REAL + '" and enter that license.)');
       else if (f.indexOf('driving but no driver') === 0) out.push(who + ': marked as the DRIVER (behind the wheel), but the ID entered ("' +
         type + '") is not a driver\'s license. FIX: if this person WILL be behind the wheel at the ' + INST + ' gate, change the ID to ' +
         'their driver\'s license. If someone else is driving, change the driver question to NO.');
@@ -1396,9 +1466,9 @@ function autoFollowUps() {
   if (!isAutomationOwner_()) return;
   rebuild();
   var plan = chasePlan_();
-  if (plan.noSlot) { MailApp.sendEmail(CONFIG.CONTACT_EMAIL, 'Base access follow-ups NOT sent', 'The Roster tab has no "Slot status" column. Run "Pull new people from Reg Zone exports".'); return; }
+  if (plan.noSlot) { sendMail_(CONFIG.CONTACT_EMAIL, 'Base access follow-ups NOT sent', 'The Roster tab has no "Slot status" column. Run "Pull new people from Reg Zone exports".'); return; }
   var res = chaseSend_(plan);
-  MailApp.sendEmail(CONFIG.CONTACT_EMAIL, 'Base access follow-ups: ' + (res.links + res.fixes) + ' sent', chaseSummary_(plan, res));
+  sendMail_(CONFIG.CONTACT_EMAIL, 'Base access follow-ups: ' + (res.links + res.fixes) + ' sent', chaseSummary_(plan, res));
 }
 function turnOnAutoFollowUps() {
   turnOffAutoFollowUps(true);
@@ -1449,10 +1519,48 @@ function emailFixRequests() {
 // ---------------------------------------------------------------- email with a waiting line
 // Gmail limits how many emails a script can send per day. If the limit is reached, the email waits on the "Email queue"
 // tab and an hourly check sends it as soon as the limit frees up. Nothing is lost.
+// Plain-text emails can show ragged line breaks in some mail apps (plain text gets re-wrapped). Every email also
+// carries an HTML version built from the same text: paragraphs, real line breaks, clickable links, and bold section labels.
+// The plain text stays as the fallback for mail apps that do not show HTML.
+function textToHtml_(body) {
+  var esc = function (t) { return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
+  var link = function (t) {
+    return t.replace(/(https?:\/\/[^\s<]+)/g, function (u) {
+      var trail = (u.match(/[.,);]+$/) || [''])[0], url = u.slice(0, u.length - trail.length);
+      return '<a href="' + url + '" style="color:#1a56c4;word-break:break-all">' + url + '</a>' + trail;
+    });
+  };
+  var label = function (t) {   // "STATUS: COMPLETE", "WHAT YOU NEED TO DO:", "FIX:" -> bold
+    t = t.replace(/^((?:[A-Z0-9][A-Z0-9 ,'()\/&-]{2,}?)(?::|(?= -)))/, '<b>$1</b>');
+    if (t.indexOf('<b>') !== 0) t = t.replace(/^([A-Z][A-Z]+(?: [A-Z]+)*\.?)(?=[ .]|$)/, function (m0) { return m0.replace(/[^A-Z]/g, '').length >= 5 && m0 !== 'CAPID' ? '<b>' + m0 + '</b>' : m0; });   // "KEEP THIS EMAIL.", "DRIVERS"
+    t = t.replace(/\bFIX:/g, '<b>FIX:</b>');
+    t = t.replace(/^<b>STATUS:<\/b> (COMPLETE[^.]*\.)/, '<b>STATUS:</b> <b style="color:#17795a">$1</b>')
+         .replace(/^<b>STATUS:<\/b> (NOT COMPLETE\.)/, '<b>STATUS:</b> <b style="color:#b42318">$1</b>');
+    return t;
+  };
+  var blocks = String(body || '').replace(/\r/g, '').split(/\n\s*\n/);
+  var html = blocks.map(function (b) {
+    var lines = b.split('\n');
+    if (lines.every(function (l) { return /^\s*- /.test(l); })) {
+      return '<ul style="margin:0 0 14px 0;padding-left:22px">' + lines.map(function (l) {
+        return '<li style="margin:0 0 4px 0">' + label(link(esc(l.replace(/^\s*- /, '')))) + '</li>'; }).join('') + '</ul>';
+    }
+    var m = /^(\d+)\. ([\s\S]*)$/.exec(b);
+    if (m) return '<p style="margin:0 0 14px 0;padding-left:26px;text-indent:-26px"><b style="display:inline-block;width:26px;text-indent:0">' +
+      m[1] + '.</b>' + lines.map(function (l, i) { return label(link(esc(i ? l : l.replace(/^\d+\. /, '')))); }).join('<br>') + '</p>';
+    return '<p style="margin:0 0 14px 0">' + lines.map(function (l) { return label(link(esc(l))); }).join('<br>') + '</p>';
+  }).join('');
+  return '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1b1f27;max-width:640px">' + html + '</div>';
+}
+function sendMail_(to, subject, body, opts) {
+  var o = {}; Object.keys(opts || {}).forEach(function (k) { o[k] = opts[k]; });
+  if (!o.htmlBody) o.htmlBody = textToHtml_(body);
+  MailApp.sendEmail(to, subject, body, o);
+}
 function safeSend_(to, subject, body, opts) {
   try {
     if (MailApp.getRemainingDailyQuota() > 0) {
-      MailApp.sendEmail(to, subject, body, opts || {});
+      sendMail_(to, subject, body, opts || {});
       logEmail_(to, opts, subject, 'Sent');
       return true;
     }
@@ -1486,7 +1594,7 @@ function sendQueuedEmails() {
     if (MailApp.getRemainingDailyQuota() < 1) break;
     try {
       var o = JSON.parse(v[i][4] || '{}');
-      MailApp.sendEmail(v[i][1], v[i][2], v[i][3], o);
+      sendMail_(v[i][1], v[i][2], v[i][3], o);
       sh.getRange(i + 2, 6).setValue(new Date()); sent++;
       logEmail_(v[i][1], o, v[i][2], 'Sent from queue');
     } catch (err) { console.log('queued send failed: ' + err); break; }
@@ -1618,6 +1726,7 @@ function collect_() {
       shortFlags_(flags), last.edit]);
     status[cap] = { att: ownId, guests: entered, flags: shortFlags_(flags) };
   });
+  people = mergeSamePerson_(people);
   people.sort(function (x, y) { return (x.cap + x.cat).localeCompare(y.cap + y.cat); });
   return { r: r, people: people, subs: subs, status: status };
 }
@@ -1720,7 +1829,7 @@ function rebuild() {
   var rows = c.people.map(function (x) {
     var p = x.p;
     return [x.cat, x.event, x.cap, x.sponsor, p.last || '', p.first || '', p.middle || '', p.suffix || '', ageOn_(p.dob),
-      p.ssn ? 'on file (' + last4_(p.ssn) + ')' : '', p.idType || '', last4_(p.idNumber), p.idIssuer || '', expShow_(p.idExpires),
+      p.ssn ? 'on file (' + last4_(p.ssn) + ')' : '', p.idType || '', last4_(p.idNumber), issuerStd_(p.idIssuer, p.idType), expShow_(p.idExpires),
       p.doc2Type ? p.doc2Type + (p.doc2Number ? ' (' + last4_(p.doc2Number) + ')' : '') : '',
       p.driving ? 'driving' : '', x.rel, x.flags.join('; '), x.ts];
   });
@@ -1764,8 +1873,8 @@ function createSecforExport() {
     var p = x.p;
     var guest = x.cat.indexOf('Guest') === 0;
     return [x.cat, x.event, x.cap, x.sponsor, p.last || '', p.first || '', p.middle || '', p.suffix || '', p.dob || '', ageOn_(p.dob),
-      p.ssn || '', p.idType || '', p.idNumber || '', p.idIssuer || '', expShow_(p.idExpires),
-      p.doc2Type || '', p.doc2Number || '', p.address || '', p.phone || '', p.sex || '', p.citizen || '', p.immDoc || '',
+      p.ssn || '', p.idType || '', p.idNumber || '', issuerStd_(p.idIssuer, p.idType), expShow_(p.idExpires),
+      p.doc2Type || '', p.doc2Number || '', p.address || '', p.phone || '', p.sex || '', citizenStd_(p.citizen), p.immDoc || '',
       vehicle_(p), guest ? CONFIG.VISIT_DATES.Guest : (CONFIG.VISIT_DATES[x.event] || ''),
       guest ? CONFIG.PURPOSE.guest : CONFIG.PURPOSE.attendee, x.rel, p.notes || '', x.signed || '', x.flags.join('; ')];
   });
@@ -1791,14 +1900,30 @@ function createSecforExport() {
 // ---------------------------------------------------------------- roster sync from the Reg Zone exports
 // Adds anyone new, refreshes rank/name/age/email/address for everyone, and marks people no longer in any export.
 // Never deletes rows: people added by hand stay (they show "Not in latest Reg Zone pull").
-function syncRosterFromRegZone() {
-  if (!isAutomationOwner_()) return;
+function syncRosterFromRegZone(e) {
+  var triggered = !!(e && e.triggerUid);
+  if (triggered && !isAutomationOwner_()) {
+    // A daily-pull trigger set up from a different Google account than the one running the automation: it used to stop
+    // here silently every morning. Now it removes itself and says so once.
+    var me = Session.getEffectiveUser().getEmail();
+    ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'syncRosterFromRegZone') ScriptApp.deleteTrigger(t); });
+    sendMail_(CONFIG.CONTACT_EMAIL, 'Base access roster: daily Reg Zone pull did NOT run',
+      'The daily Reg Zone pull was turned on from ' + me + ', but the emails and automation run from ' + automationOwner_() + '.\n\n' +
+      'So the pull did not run, and it has been turned off for ' + me + '.\n\n' +
+      'To fix: open the spreadsheet signed in as ' + automationOwner_() + ' and pick Base Access > Turn on daily Reg Zone pull (6 AM).');
+    return;
+  }
   if (!CONFIG.REGZONE_FOLDER_ID) {
     var m0 = 'No Reg Zone folder is set (CONFIG.REGZONE_FOLDER_ID). Fill in the Roster tab yourself (see README), or set the folder.';
     try { SpreadsheetApp.getUi().alert(m0); } catch (e) { console.log(m0); }
     return;
   }
-  var folder = DriveApp.getFolderById(CONFIG.REGZONE_FOLDER_ID);
+  var folder;
+  try { folder = DriveApp.getFolderById(CONFIG.REGZONE_FOLDER_ID); } catch (err) {
+    var fmsg = 'The Reg Zone pull did NOT run: ' + Session.getEffectiveUser().getEmail() + ' cannot open the Reg Zone folder. Share the folder with this account.';
+    try { SpreadsheetApp.getUi().alert(fmsg); } catch (x) { sendMail_(CONFIG.CONTACT_EMAIL, 'Base access roster: Reg Zone pull did NOT run', fmsg); }
+    return;
+  }
   var recs = {}, missing = [];
   Object.keys(CONFIG.REGZONE_FILES).forEach(function (ev) {
     var it = folder.getFilesByName(CONFIG.REGZONE_FILES[ev]);
@@ -1827,7 +1952,7 @@ function syncRosterFromRegZone() {
   if (missing.length) {
     var msg = 'Could not find ' + missing.join(', ') + ' in the Reg Zone folder. Nothing was changed. ' +
       'Make sure this Google account can open the folder.';
-    try { SpreadsheetApp.getUi().alert(msg); } catch (e) { console.log(msg); }
+    try { SpreadsheetApp.getUi().alert(msg); } catch (x) { sendMail_(CONFIG.CONTACT_EMAIL, 'Base access roster: Reg Zone pull did NOT run', msg); }
     return;
   }
   var r = rosterRows_(), h = r.header;
@@ -1866,15 +1991,40 @@ function syncRosterFromRegZone() {
   var v = updateCapidValidation();
   writePersonalLinks();
   rebuild();
+  props_().setProperty('LAST_SYNC', new Date().toISOString());
   var summary = 'Reg Zone pull done.\n\nAdded ' + added.length + (added.length ? ':\n- ' + added.join('\n- ') : '') +
     '\n\nNo longer in Reg Zone (kept on the roster, marked): ' + gone.length + (gone.length ? '\n- ' + gone.join('\n- ') : '') +
     '\n\n' + v + '\nNew people have personal links on the Roster tab. Use "Email personal links" to send them.';
   try { SpreadsheetApp.getUi().alert(summary); } catch (e) {
-    if (added.length || gone.length) MailApp.sendEmail(CONFIG.CONTACT_EMAIL, 'Base access roster: daily Reg Zone pull', summary);
+    if (added.length || gone.length) sendMail_(CONFIG.CONTACT_EMAIL, 'Base access roster: daily Reg Zone pull', summary);
   }
 }
 
+function showAutomationStatus() {
+  var me = Session.getEffectiveUser().getEmail(), owner = automationOwner_() || '(not set: this account)';
+  var mine = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
+  var has = function (f) { return mine.indexOf(f) >= 0 ? 'ON' : 'off'; };
+  var last = props_().getProperty('LAST_SYNC');
+  var tz = Session.getScriptTimeZone();
+  SpreadsheetApp.getUi().alert('Signed in as: ' + me + '\nEmails and automation run from: ' + owner + '\n\n' +
+    'Scheduled jobs set up by THIS account (Google only shows your own):\n' +
+    '- Daily Reg Zone pull: ' + has('syncRosterFromRegZone') + '\n' +
+    '- Confirmation emails on submit: ' + has('onFormSubmitHandler') + '\n' +
+    '- Automatic follow-ups (Mon + Thu): ' + has('autoFollowUps') + '\n' +
+    '- Email queue: ' + has('sendQueuedEmails') + '\n' +
+    '- Weekly approval reminders (Registration reminders menu, Mondays): ' + has('weeklyApprovalReminders') + '\n\n' +
+    'Last Reg Zone pull that finished: ' + (last ? Utilities.formatDate(new Date(last), tz, 'EEE d MMM, h:mm a') : 'not recorded yet') + '\n' +
+    'Script time zone (the "6 AM" is in this zone): ' + tz +
+    (owner.toLowerCase() !== me.toLowerCase() && automationOwner_() ? '\n\nYou are NOT the automation account, so the list above is not the one that matters. Check from ' + owner + '.' : ''));
+}
+
 function turnOnDailySync() {
+  if (!isAutomationOwner_()) {
+    SpreadsheetApp.getUi().alert('Emails and automation run from ' + automationOwner_() + ', not from this account (' +
+      Session.getEffectiveUser().getEmail() + ').\n\nSign in as ' + automationOwner_() + ' and turn on the daily pull from there. ' +
+      '(Or pick "Run emails and automation from MY Google account" first, to move everything to this account.)');
+    return;
+  }
   if (!CONFIG.REGZONE_FOLDER_ID) { SpreadsheetApp.getUi().alert('Set CONFIG.REGZONE_FOLDER_ID first (see README).'); return; }
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'syncRosterFromRegZone') ScriptApp.deleteTrigger(t);
@@ -1982,6 +2132,34 @@ function shortFlags_(flags) {   // drop the informational 'no SSN' note from sum
     .filter(function (f) { return !/:\s*$/.test(f); }).join(' | ');
 }
 
+// A parent listed as a guest on two siblings' forms (or a staff member also listed as a guest) must appear ONCE on the
+// lists for installation security. Same first + last name + date of birth = same person. Keep the attendee row, else the first.
+function mergeSamePerson_(people) {
+  var rankOf = function (x) { return x.cat.indexOf('Attendee') === 0 ? 0 : x.cat === 'Guest (driver)' ? 1 : x.cat === 'Guest' ? 2 : 3; };
+  var keyOf = function (x) {
+    var n = function (v) { return String(v || '').toLowerCase().normalize('NFD').replace(/[^a-z]/g, ''); };
+    var d = x.p.dob, ds = d instanceof Date ? d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate() : String(d || '').trim();
+    return ds && n(x.p.first) && n(x.p.last) ? n(x.p.first) + '|' + n(x.p.last) + '|' + ds : '';
+  };
+  var byKey = {}, out = [];
+  people.forEach(function (x) {
+    var k = keyOf(x);
+    if (!k) { out.push(x); return; }
+    var y = byKey[k];
+    if (!y) { byKey[k] = x; out.push(x); return; }
+    var keep = rankOf(x) < rankOf(y) ? x : y, other = keep === x ? y : x;
+    if (keep === x) out[out.indexOf(y)] = x;
+    byKey[k] = keep;
+    if (String(keep.sponsor).indexOf(other.sponsor) < 0) {
+      keep.sponsor = keep.sponsor + ' / ' + other.sponsor;
+      keep.cap = keep.cap + ' / ' + other.cap;
+    }
+    if (!keep.rel && other.rel && keep.cat.indexOf('Attendee') !== 0) keep.rel = other.rel;
+    other.flags.forEach(function (f) { if (keep.flags.indexOf(f) < 0) keep.flags.push(f); });
+  });
+  return out;
+}
+
 function personFlags_(p, END) {
   var f = [];
   if (isExemptId_(p.idType)) {
@@ -1994,6 +2172,11 @@ function personFlags_(p, END) {
   else if (/^(\d)\1{8}$/.test(ssn) || /^(000|666|9)/.test(ssn) || ssn.slice(3, 5) === '00' || ssn.slice(5) === '0000')
     f.push('SSN looks invalid');
   if (SSN_REQUIRED_TYPES.indexOf(p.idType) >= 0 && !p.doc2Type) f.push('non-REAL ID without a second ID');
+  // A second ID must be one they HAVE now, with its number ("Will be obtaining my Real ID" or a blank number is not usable)
+  else if (SSN_REQUIRED_TYPES.indexOf(p.idType) >= 0 &&
+           (/\b(will|going to|plan|planning|obtain|obtaining|getting|apply|applying|applied|pending|in progress|don'?t have|do not have|none|n\/?a)\b/i.test(String(p.doc2Type)) ||
+            !/\d/.test(String(p.doc2Number || ''))))
+    f.push('second ID not usable (must be an ID they have now, with its number)');
   if (p.driving && DRIVER_TYPES.indexOf(p.idType) < 0) f.push('driving but no driver\'s license given');
   var age = ageOn_(p.dob);
   if (p.driving && age !== '' && age < 16) f.push('listed as a DRIVER but only ' + age + ' (too young for a license)');
@@ -2226,7 +2409,7 @@ function testApprovalReminder() {
   var r = approvalPlan_(), ui = SpreadsheetApp.getUi();
   if (!r.plan.length) { ui.alert('Nobody is missing an approval right now.'); return; }
   var pick = r.plan.filter(function (x) { return x.p.needParent && x.p.needUnit; })[0] || r.plan[0];
-  MailApp.sendEmail(CONFIG.CONTACT_EMAIL, '[TEST] ' + pick.m.subject,
+  sendMail_(CONFIG.CONTACT_EMAIL, '[TEST] ' + pick.m.subject,
     '(TEST: the real email would go To: ' + pick.m.to.join(', ') + '  CC: ' + pick.m.cc.join(', ') + ')\n\n' + pick.m.body,
     { name: CONFIG.CONTACT_NAME });
   ui.alert('Sent a test to ' + CONFIG.CONTACT_EMAIL + ' using ' + pick.p.first + ' ' + pick.p.last + '\'s data. Nobody else was emailed.');
@@ -2243,7 +2426,7 @@ function sendApprovals_(auto) {
   var ageH = r.asOf ? (new Date() - r.asOf) / 3600000 : 999;
   if (auto) {
     if (r.missing.length || ageH > APPROVALS.MAX_DATA_AGE_HOURS) {
-      MailApp.sendEmail(CONFIG.CONTACT_EMAIL, 'Approval reminders NOT sent: Reg Zone data is ' + Math.round(ageH / 24) + ' days old',
+      sendMail_(CONFIG.CONTACT_EMAIL, 'Approval reminders NOT sent: Reg Zone data is ' + Math.round(ageH / 24) + ' days old',
         'The weekly approval reminders did not go out because the Reg Zone exports in Drive are from ' + r.asOf +
         '. Get fresh Reg Zone exports saved to the Drive folder, then use Registration reminders > Send approval reminders now.');
       return;
@@ -2272,7 +2455,7 @@ function sendApprovals_(auto) {
   props_().setProperty('APPROVAL_SENT', JSON.stringify(hist));
   approvalPlan_();   // refresh the tab with the new "last emailed" dates
   var msg = 'Sent ' + sent + ' approval reminders and ' + goD.length + ' combined commander emails.';
-  if (auto) MailApp.sendEmail(CONFIG.CONTACT_EMAIL, 'Weekly approval reminders: ' + sent + ' sent', msg + '\n\nDetails: "' + APPROVALS.TAB + '" tab of the base access sheet.');
+  if (auto) sendMail_(CONFIG.CONTACT_EMAIL, 'Weekly approval reminders: ' + sent + ' sent', msg + '\n\nDetails: "' + APPROVALS.TAB + '" tab of the base access sheet.');
   else SpreadsheetApp.getUi().alert(msg + (MailApp.getRemainingDailyQuota() <= 0 ? ' Some may be waiting on the Email queue tab.' : ''));
 }
 
