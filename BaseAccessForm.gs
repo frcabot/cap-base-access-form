@@ -176,14 +176,18 @@ function usStateCode_(v) {
   var hit = '';
   if (raw.length === 2) US_STATES.some(function (x) { if (x.slice(0, 2).toLowerCase() === raw) { hit = x.slice(0, 2); return true; } });
   if (hit) return hit;
-  var t = String(v || '').replace(/\b(state|of|the|dmv|department|dept|motor|vehicles?|driver'?s?|licen[cs]es?|id|card|real|services?|division|bureau|office|agency)\b/gi, ' ')
+  var tail = /,\s*([A-Za-z]{2})\.?\s*$/.exec(String(v || ''));   // "Springfield, ID", "Boise, Id."
+  if (tail) US_STATES.some(function (x) { if (x.slice(0, 2).toLowerCase() === tail[1].toLowerCase()) { hit = x.slice(0, 2); return true; } });
+  if (hit) return hit;
+  var t = String(v || '').replace(/\b(n|no)\.?\s+(dakota|carolina|mariana)/gi, 'north $2').replace(/\bs\.?\s+(dakota|carolina)/gi, 'south $1')
+    .replace(/\bw\.?\s+virginia/gi, 'west virginia').replace(/\bw\.?\s*va\b\.?/gi, 'west virginia').replace(/\b(state|of|the|dmv|department|dept|motor|vehicles?|driver'?s?|licen[cs]es?|id|card|real|services?|division|bureau|office|agency)\b/gi, ' ')
     .replace(/[^A-Za-z ]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase()
     .replace(/\s+(usa|u s a|us|u s|united states( of america)?|america)$/, '');   // "California, USA" -> "california"
   if (!t) return '';
   if (/^(calif|cal|cali)$/.test(t)) return 'CA';
   var best = 0;
   US_STATES.forEach(function (x) {
-    var ab = x.slice(0, 2).toLowerCase(), nm = x.slice(3).toLowerCase();
+    var ab = x.slice(0, 2).toLowerCase(), nm = x.slice(3).toLowerCase().replace(/\b(of|the)\b/g, ' ').replace(/\s+/g, ' ').trim();
     var re = new RegExp('(^|\\s)(' + nm + '|' + ab + ')$');   // "Sacramento, CA", "City of Austin Texas"
     var score = (t === ab || t === nm) ? 1000 : (t.indexOf(' ') > 0 && re.test(t)) ? (re.exec(t)[2].length) : 0;
     if (score > best) { best = score; hit = x.slice(0, 2); }   // longest match wins: "West Virginia" -> WV, not VA
